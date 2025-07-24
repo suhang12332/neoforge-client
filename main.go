@@ -62,6 +62,37 @@ func extractVersionJson(jarPath, outDir string) error {
 	return fmt.Errorf("version.json not found in %s", jarPath)
 }
 
+// 通用：从 jar/zip 文件中提取指定文件到 outDir
+func extractFileFromJar(jarPath, outDir, fileName string) error {
+	zipReader, err := zip.OpenReader(jarPath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+	for _, f := range zipReader.File {
+		if f.Name == fileName {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			outPath := filepath.Join(outDir, fileName)
+			outFile, err := os.Create(outPath)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+			_, err = io.Copy(outFile, rc)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Extracted %s to %s\n", fileName, outPath)
+			return nil
+		}
+	}
+	return fmt.Errorf("%s not found in %s", fileName, jarPath)
+}
+
 // 自动下载installer，优先BMCLAPI，失败则用官方maven
 func downloadInstaller(installerPath, fileName, buildDir string) error {
 	// bmclapiURL := "https://bmclapi2.bangbang93.com" + installerPath
@@ -196,11 +227,71 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 
 	fmt.Printf("Successfully copied client jar to %s\n", destPath)
 
-	// 解压 installer jar 里的 version.json 到 client jar 同目录
-	err = extractVersionJson(installerPath, destDir)
-	if err != nil {
+	// 解压 installer jar 里的 version.json 和 install_profile.json 到 client jar 同目录
+	if err := extractFileFromJar(installerPath, destDir, "version.json"); err != nil {
 		fmt.Printf("Warning: %v\n", err)
 	}
+	if err := extractFileFromJar(installerPath, destDir, "install_profile.json"); err != nil {
+		fmt.Printf("Warning: %v\n", err)
+	}
+
+	// 自动 patch version.json，追加所有 neoforge universal library
+	func() {
+		ipPath := filepath.Join(destDir, "install_profile.json")
+		vPath := filepath.Join(destDir, "version.json")
+		ipBytes, err := os.ReadFile(ipPath)
+		if err != nil {
+			fmt.Printf("patch version.json: 读取 install_profile.json 失败: %v\n", err)
+			return
+		}
+		var ip map[string]interface{}
+		if err := json.Unmarshal(ipBytes, &ip); err != nil {
+			fmt.Printf("patch version.json: 解析 install_profile.json 失败: %v\n", err)
+			return
+		}
+		var targetLibs []map[string]interface{}
+		if libs, ok := ip["libraries"].([]interface{}); ok {
+			for _, l := range libs {
+				lib, _ := l.(map[string]interface{})
+				name, _ := lib["name"].(string)
+				if lib != nil && strings.HasPrefix(name, "net.neoforged:neoforge:") && strings.HasSuffix(name, ":universal") {
+					targetLibs = append(targetLibs, lib)
+				}
+			}
+		}
+		if len(targetLibs) == 0 {
+			fmt.Printf("patch version.json: 未找到目标 library\n")
+			return
+		}
+		vBytes, err := os.ReadFile(vPath)
+		if err != nil {
+			fmt.Printf("patch version.json: 读取 version.json 失败: %v\n", err)
+			return
+		}
+		var v map[string]interface{}
+		if err := json.Unmarshal(vBytes, &v); err != nil {
+			fmt.Printf("patch version.json: 解析 version.json 失败: %v\n", err)
+			return
+		}
+		if vlibs, ok := v["libraries"].([]interface{}); ok {
+			for _, lib := range targetLibs {
+				vlibs = append(vlibs, lib)
+			}
+			v["libraries"] = vlibs
+		} else {
+			libs := make([]interface{}, 0, len(targetLibs))
+			for _, lib := range targetLibs {
+				libs = append(libs, lib)
+			}
+			v["libraries"] = libs
+		}
+		out, _ := json.MarshalIndent(v, "", "  ")
+		if err := os.WriteFile(vPath, out, 0644); err != nil {
+			fmt.Printf("patch version.json: 写回 version.json 失败: %v\n", err)
+			return
+		}
+		fmt.Println("patch version.json: 已追加所有 universal library 并更新 version.json")
+	}()
 
 	// 清理 build 目录
 	// os.RemoveAll(buildDir)
@@ -323,7 +414,6 @@ func main() {
 		fmt.Printf("Error parsing NeoForge metadata: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("versions: %v\n", versions)
 	if len(versions) == 0 {
 		fmt.Println("未找到任何 NeoForge 版本")
 		os.Exit(1)
