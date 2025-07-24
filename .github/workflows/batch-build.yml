@@ -1,0 +1,52 @@
+name: Batch Build NeoForge
+
+on:
+  workflow_dispatch:
+
+jobs:
+  batch-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Download MC version manifest
+        run: |
+          curl -sSL -o version_manifest.json https://launchermeta.mojang.com/mc/game/version_manifest.json
+
+      - name: Filter MC versions >= 1.20.2
+        run: |
+          jq -r '.versions[] | select(.type=="release") | .id' version_manifest.json | sort -V | awk '$1 >= "1.20.2"' > mc_versions.txt
+
+      - name: Batch build and upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          while read mc; do
+            echo "==== Building NeoForge for MC $mc ===="
+            go run main.go --mc $mc --latest || continue
+
+            # 查找产物
+            client_jar=$(find . -type f -name 'neoforge-*'"$mc"'*-client.jar' | head -n1)
+            [ -z "$client_jar" ] && client_jar=$(find . -type f -name 'neoforge-*-client.jar' | head -n1)
+            version_json=$(find . -type f -name 'version.json' | head -n1)
+
+            if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
+              tag="neoforge-mc-$mc"
+              gh release create "$tag" -t "NeoForge for MC $mc" -n "Auto build for MC $mc" || true
+              gh release upload "$tag" "$client_jar" "$version_json" --clobber
+              echo "Uploaded $client_jar and $version_json to release $tag"
+            else
+              echo "Build for $mc failed or missing artifacts"
+            fi
+          done < mc_versions.txt
