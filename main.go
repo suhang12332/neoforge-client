@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	// "sort"
 	"strings"
 )
 
@@ -221,37 +221,77 @@ func getLatestNeoForgeVersion() (string, error) {
 	return meta.Versioning.Latest, nil
 }
 
+func getLatestMCRelease() (string, error) {
+	resp, err := http.Get("https://launchermeta.mojang.com/mc/game/version_manifest.json")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var data struct {
+		Latest struct {
+			Release string `json:"release"`
+		} `json:"latest"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", err
+	}
+	return data.Latest.Release, nil
+}
+
 func main() {
 	latest := flag.Bool("latest", false, "只构建最新NeoForge版本")
 	mc := flag.String("mc", "", "指定Minecraft版本, 例如 1.21.7")
 	flag.Parse()
 
 	if *latest {
-		// 1. 获取maven-metadata.xml中的latest版本
-		latestVersion, err := getLatestNeoForgeVersion()
+		// 1. 获取 MC 最新 release 版本
+		latestMC, err := getLatestMCRelease()
 		if err != nil {
-			fmt.Printf("Error fetching latest NeoForge version: %v\n", err)
+			fmt.Printf("Error fetching latest MC release: %v\n", err)
 			os.Exit(1)
 		}
-		// 2. 拼接installerPath（去掉/maven前缀）
-		installerPath := fmt.Sprintf("/net/neoforged/neoforge/%s/neoforge-%s-installer.jar", latestVersion, latestVersion)
-		// 3. 构造NeoForgeVersion结构体
-		version := NeoForgeVersion{
-			Version:       latestVersion,
-			InstallerPath: installerPath,
-			McVersion:     "", // 可选，maven仓库不含mcversion
-			RawVersion:    "neoforge-" + latestVersion,
+		fmt.Printf("Latest MC release: %s\n", latestMC)
+
+		// 2. 获取该 MC 版本下所有 NeoForge 版本
+		metaURL := fmt.Sprintf("https://bmclapi2.bangbang93.com/neoforge/list/%s", latestMC)
+		resp, err := http.Get(metaURL)
+		if err != nil {
+			fmt.Printf("Error fetching NeoForge metadata: %v\n", err)
+			os.Exit(1)
 		}
-		fmt.Printf("\n==== 构建 NeoForge 最新版 %s ====\n", latestVersion)
-		jarPath, err := BuildNeoForgeClient(version)
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			fmt.Printf("Error fetching NeoForge metadata: status %d\n", resp.StatusCode)
+			os.Exit(1)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Printf("Error reading NeoForge metadata: %v\n", err)
+			os.Exit(1)
+		}
+
+		var versions []NeoForgeVersion
+		if err := json.Unmarshal(body, &versions); err != nil {
+			fmt.Printf("Error parsing NeoForge metadata: %v\n", err)
+			os.Exit(1)
+		}
+		if len(versions) == 0 {
+			fmt.Println("未找到任何 NeoForge 版本")
+			os.Exit(1)
+		}
+		latestVersion := versions[len(versions)-1]
+		latestVersion.InstallerPath = strings.Replace(latestVersion.InstallerPath, "/maven", "", 1)
+
+		fmt.Printf("\n==== 构建 %s / %s ====\n", latestVersion.McVersion, latestVersion.Version)
+		jarPath, err := BuildNeoForgeClient(latestVersion)
 		if err != nil {
 			fmt.Printf("构建失败: %v\n", err)
 			os.Exit(1)
 		}
 		f, _ := os.Create("artifacts.txt")
-		fmt.Fprintf(f, "%s %s\n", jarPath, latestVersion)
+		fmt.Fprintf(f, "%s %s %s\n", jarPath, latestVersion.McVersion, latestVersion.Version)
 		f.Close()
-		fmt.Printf("构建完成: %s\n", latestVersion)
+		fmt.Printf("构建完成: %s %s\n", latestVersion.McVersion, latestVersion.Version)
 		return
 	}
 
@@ -283,14 +323,15 @@ func main() {
 		fmt.Printf("Error parsing NeoForge metadata: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("versions: %v\n", versions)
 	if len(versions) == 0 {
 		fmt.Println("未找到任何 NeoForge 版本")
 		os.Exit(1)
 	}
 
-	sort.Slice(versions, func(i, j int) bool {
-		return versions[i].Version < versions[j].Version
-	})
+	// sort.Slice(versions, func(i, j int) bool {
+	// 	return versions[i].Version < versions[j].Version
+	// })
 	latestVersion := versions[len(versions)-1]
 
 	// 修正installerPath，去掉/maven前缀
