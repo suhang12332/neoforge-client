@@ -30,10 +30,18 @@ jobs:
           echo "client_jar=$client_jar" >> $GITHUB_OUTPUT
           echo "version_json=$version_json" >> $GITHUB_OUTPUT
 
+      - name: Parse version
+        id: parse_version
+        shell: bash
+        run: |
+          version=$(jq -r .version "${{ steps.find_artifacts.outputs.version_json }}")
+          echo "Parsed version: $version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: neoforge-latest
+          tag_name: ${{ steps.parse_version.outputs.version }}
           files: |
             ${{ steps.find_artifacts.outputs.client_jar }}
             ${{ steps.find_artifacts.outputs.version_json }}
