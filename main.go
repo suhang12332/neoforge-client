@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const metaURL = "https://bmclapi2.bangbang93.com/neoforge/list/1.21.7"
@@ -290,6 +291,9 @@ func main() {
 		return versions[i].Version < versions[j].Version
 	})
 	latestVersion := versions[len(versions)-1]
+
+	// 修正installerPath，去掉/maven前缀
+	latestVersion.InstallerPath = strings.Replace(latestVersion.InstallerPath, "/maven", "", 1)
 
 	fmt.Printf("\n==== 构建 %s / %s ====\n", latestVersion.McVersion, latestVersion.Version)
 	jarPath, err := BuildNeoForgeClient(latestVersion)
