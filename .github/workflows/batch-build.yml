@@ -42,7 +42,7 @@ jobs:
 
             if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
               tag="neoforge-mc-$mc-forge-$forge_version"
-              gh release create "$tag" -t "NeoForge $forge_version for MC $mc" -n "Auto build for MC $mc, NeoForge $forge_version" || true
+              gh release create "$tag" -t "$forge_version" -n "Auto build for MC $mc, NeoForge $forge_version" || true
               gh release upload "$tag" "$client_jar" "$version_json" --clobber
               echo "Uploaded $client_jar and $version_json to release $tag"
             else
