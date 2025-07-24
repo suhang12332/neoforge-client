@@ -1,16 +1,14 @@
-name: Build NeoForge Latest
+name: Batch Build NeoForge (Fixed MC Versions)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *' # 每天凌晨2点自动构建
 
 jobs:
-  build:
+  batch-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
@@ -18,32 +16,27 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Build NeoForge Latest
-        run: go run main.go --latest
-
-      - name: Find client.jar and version.json
-        id: find_artifacts
-        run: |
-          # 假设 client.jar 在 build/<version>/neoforge-*-client.jar
-          client_jar=$(find . -type f -name 'neoforge-*-client.jar' | head -n1)
-          version_json=$(find . -type f -name 'version.json' | head -n1)
-          echo "client_jar=$client_jar" >> $GITHUB_OUTPUT
-          echo "version_json=$version_json" >> $GITHUB_OUTPUT
-
-      - name: Parse version
-        id: parse_version
-        shell: bash
-        run: |
-          version=$(jq -r .version "${{ steps.find_artifacts.outputs.version_json }}")
-          echo "Parsed version: $version"
-          echo "version=$version" >> $GITHUB_OUTPUT
-
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.parse_version.outputs.version }}
-          files: |
-            ${{ steps.find_artifacts.outputs.client_jar }}
-            ${{ steps.find_artifacts.outputs.version_json }}
+      - name: Batch build and upload (fixed MC versions)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mc_versions="1.20.2 1.20.3 1.20.4 1.20.5 1.20.6 1.21.0 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7"
+          for mc in $mc_versions; do
+            echo "==== Building NeoForge for MC $mc ===="
+            go run main.go --mc $mc || continue
+
+            client_jar=$(find ./build/$mc -type f -name 'neoforge-*-client.jar' | head -n1)
+            version_json=$(find ./build/$mc -type f -name 'version.json' | head -n1)
+            # 从 client_jar 文件名中提取 forge 版本号
+            forge_version=$(basename "$client_jar" | sed -E 's/neoforge-([^-]+)-client\.jar/\1/')
+
+            if [ -f "$client_jar" ] && [ -f "$version_json" ] && [ "$forge_version" != "unknown" ] && [ -n "$forge_version" ]; then
+              tag="neoforge-mc-$mc-forge-$forge_version"
+              gh release create "$tag" -t "NeoForge $forge_version for MC $mc" -n "Auto build for MC $mc, NeoForge $forge_version" || true
+              gh release upload "$tag" "$client_jar" "$version_json" --clobber
+              echo "Uploaded $client_jar and $version_json to release $tag"
+            else
+              echo "Build for $mc failed or missing artifacts"
+            fi
+          done
