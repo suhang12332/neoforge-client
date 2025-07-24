@@ -24,13 +24,23 @@ jobs:
           mc_versions="1.20.2 1.20.3 1.20.4 1.20.5 1.20.6 1.21.0 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7"
           for mc in $mc_versions; do
             echo "==== Building NeoForge for MC $mc ===="
-            go run main.go --mc $mc || continue
+            build_log=$(mktemp)
+            go run main.go --mc $mc | tee "$build_log" || continue
 
-            client_jar=$(find ./build/$mc -type f -name 'neoforge-*-client.jar' | head -n1)
-            version_json=$(find ./build/$mc -type f -name 'version.json' | head -n1)
-            forge_version=$(cat $(dirname "$client_jar")/neoforge_version.txt 2>/dev/null || echo unknown)
+            # 从日志中提取 neoforge 版本号（假设格式为 “==== 构建 1.20.2 / 20.2.93 ====“）
+            forge_version=$(grep -oE '==== 构建 [^/]+ / ([^ ]+) ====' "$build_log" | sed -E 's/.* \/ ([^ ]+) ====/\1/')
+            rm "$build_log"
 
-            if [ -f "$client_jar" ] && [ -f "$version_json" ] && [ "$forge_version" != "unknown" ]; then
+            if [ -z "$forge_version" ]; then
+              echo "Could not extract NeoForge version for MC $mc"
+              continue
+            fi
+
+            build_dir="./build/$forge_version"
+            client_jar=$(find "$build_dir" -type f -name 'neoforge-*-client.jar' | head -n1)
+            version_json="$build_dir/version.json"
+
+            if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
               tag="neoforge-mc-$mc-forge-$forge_version"
               gh release create "$tag" -t "NeoForge $forge_version for MC $mc" -n "Auto build for MC $mc, NeoForge $forge_version" || true
               gh release upload "$tag" "$client_jar" "$version_json" --clobber
