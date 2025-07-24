@@ -142,7 +142,8 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 
 	// 跳过已存在的 client.jar
 	clientJarName := fmt.Sprintf("neoforge-%s-client.jar", nf.Version)
-	clientJarPath := filepath.Join(nf.Version, clientJarName)
+	outputDir := filepath.Join("build", nf.Version)
+	clientJarPath := filepath.Join(outputDir, clientJarName)
 	if _, err := os.Stat(clientJarPath); err == nil {
 		fmt.Printf("Already built: %s, skip.\n", clientJarPath)
 		return clientJarPath, nil
@@ -170,7 +171,7 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 	sourceFileName := fmt.Sprintf("neoforge-%s-client.jar", nf.Version)
 	sourcePath := filepath.Join(buildDir, "libraries", "net", "neoforged", "neoforge", nf.Version, sourceFileName)
 
-	destDir := nf.Version
+	destDir := outputDir
 	if err := os.MkdirAll(destDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("Error creating destination directory %s: %v", destDir, err)
 	}
@@ -202,7 +203,7 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 	}
 
 	// 清理 build 目录
-	os.RemoveAll(buildDir)
+	// os.RemoveAll(buildDir)
 
 	return destPath, nil
 }
