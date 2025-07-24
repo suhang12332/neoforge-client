@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           client_jar="${{ steps.find_artifacts.outputs.client_jar }}"
-          version=$(basename "$client_jar" | sed -E 's/neoforge-([^-]+)-client\\.jar/\1/')
+          version=$(basename "$client_jar" | sed -E 's/^neoforge-([0-9.]+)-client\.jar$/\1/')
           echo "Parsed version: $version"
           if [[ -z "$version" || "$version" == "null" ]]; then
             echo "Error: version is null or empty!"
