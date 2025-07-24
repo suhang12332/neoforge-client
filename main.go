@@ -123,10 +123,11 @@ func ensureLauncherProfile(destDir string) error {
 
 // 修改BuildNeoForgeClient调用下载逻辑
 func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
-	buildDir := filepath.Join("build", nf.Version)
+	// 构建目录为 build/<mc_version>/<neoforge_version>
+	buildDir := filepath.Join("build", nf.McVersion, nf.Version)
 	fmt.Printf("\nBuilding NeoForge client for Minecraft %s with NeoForge %s...\n", nf.McVersion, nf.Version)
 
-	// 创建 build/版本 目录
+	// 创建 build/MC/版本 目录
 	err := os.MkdirAll(buildDir, os.ModePerm)
 	if err != nil {
 		return "", fmt.Errorf("Error creating build directory: %v", err)
@@ -142,7 +143,7 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 
 	// 跳过已存在的 client.jar
 	clientJarName := fmt.Sprintf("neoforge-%s-client.jar", nf.Version)
-	clientJarPath := filepath.Join(nf.Version, clientJarName)
+	clientJarPath := filepath.Join(buildDir, clientJarName)
 	if _, err := os.Stat(clientJarPath); err == nil {
 		fmt.Printf("Already built: %s, skip.\n", clientJarPath)
 		return clientJarPath, nil
@@ -168,9 +169,8 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 	// 复制 client.jar
 	fmt.Println("Copying client jar...")
 	sourceFileName := fmt.Sprintf("neoforge-%s-client.jar", nf.Version)
-	sourcePath := filepath.Join(buildDir, "libraries", "net", "neoforged", "neoforge", nf.Version, sourceFileName)
-
-	destDir := nf.Version
+	sourcePath := filepath.Join(buildDir, sourceFileName)
+	destDir := buildDir
 	if err := os.MkdirAll(destDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("Error creating destination directory %s: %v", destDir, err)
 	}
@@ -201,8 +201,7 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 		fmt.Printf("Warning: %v\n", err)
 	}
 
-	// 清理 build 目录
-	os.RemoveAll(buildDir)
+	// 不再清理 build 目录，保留产物
 
 	return destPath, nil
 }
