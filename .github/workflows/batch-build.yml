@@ -1,4 +1,4 @@
-name: Batch Build NeoForge
+name: Batch Build NeoForge (Fixed MC Versions)
 
 on:
   workflow_dispatch:
@@ -16,36 +16,26 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Download MC version manifest
-        run: |
-          curl -sSL -o version_manifest.json https://launchermeta.mojang.com/mc/game/version_manifest.json
-
-      - name: Filter MC versions >= 1.20.2
-        run: |
-          jq -r '.versions[] | select(.type=="release") | .id' version_manifest.json | sort -V | awk -F. '($1 == 1 && $2 == 20 && $3 >= 2) || ($1 == 1 && $2 > 20) || ($1 > 1)' > mc_versions.txt
-
-      - name: Batch build and upload
+      - name: Batch build and upload (fixed MC versions)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          while read mc; do
+          mc_versions="1.20.2 1.20.3 1.20.4 1.20.5 1.20.6 1.21.0 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7"
+          for mc in $mc_versions; do
             echo "==== Building NeoForge for MC $mc ===="
             go run main.go --mc $mc --latest || continue
 
-            # 查找产物（在 build/<mc>/<neoforge>/ 目录下）
             client_jar=$(find ./build/$mc -type f -name 'neoforge-*-client.jar' | head -n1)
             version_json=$(find ./build/$mc -type f -name 'version.json' | head -n1)
+            forge_version=$(cat $(dirname "$client_jar")/neoforge_version.txt 2>/dev/null || echo unknown)
 
-            if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
-              tag="neoforge-mc-$mc"
-              gh release create "$tag" -t "NeoForge for MC $mc" -n "Auto build for MC $mc" || true
+            if [ -f "$client_jar" ] && [ -f "$version_json" ] && [ "$forge_version" != "unknown" ]; then
+              tag="neoforge-mc-$mc-forge-$forge_version"
+              gh release create "$tag" -t "NeoForge $forge_version for MC $mc" -n "Auto build for MC $mc, NeoForge $forge_version" || true
               gh release upload "$tag" "$client_jar" "$version_json" --clobber
               echo "Uploaded $client_jar and $version_json to release $tag"
             else
               echo "Build for $mc failed or missing artifacts"
             fi
-          done < mc_versions.txt
+          done
