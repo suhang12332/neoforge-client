@@ -26,8 +26,8 @@ jobs:
             echo "==== Building NeoForge for MC $mc ===="
             go run main.go --mc $mc || continue
 
-            client_jar=$(find /$mc -type f -name 'neoforge-*-client.jar' | head -n1)
-            version_json=$(find /$mc -type f -name 'version.json' | head -n1)
+            client_jar=$(find $mc -type f -name 'neoforge-*-client.jar' | head -n1)
+            version_json=$(find $mc -type f -name 'version.json' | head -n1)
             forge_version=$(cat $(dirname "$client_jar")/neoforge_version.txt 2>/dev/null || echo unknown)
 
             if [ -f "$client_jar" ] && [ -f "$version_json" ] && [ "$forge_version" != "unknown" ]; then
