@@ -25,7 +25,7 @@ jobs:
 
       - name: Filter MC versions >= 1.20.2
         run: |
-          jq -r '.versions[] | select(.type=="release") | .id' version_manifest.json | sort -V | awk '$1 >= "1.20.2"' > mc_versions.txt
+          jq -r '.versions[] | select(.type=="release") | .id' version_manifest.json | sort -V | awk -F. '($1 == 1 && $2 == 20 && $3 >= 2) || ($1 == 1 && $2 > 20) || ($1 > 1)' > mc_versions.txt
 
       - name: Batch build and upload
         env:
@@ -36,10 +36,9 @@ jobs:
             echo "==== Building NeoForge for MC $mc ===="
             go run main.go --mc $mc --latest || continue
 
-            # 查找产物
-            client_jar=$(find . -type f -name 'neoforge-*'"$mc"'*-client.jar' | head -n1)
-            [ -z "$client_jar" ] && client_jar=$(find . -type f -name 'neoforge-*-client.jar' | head -n1)
-            version_json=$(find . -type f -name 'version.json' | head -n1)
+            # 查找产物（在 build/<mc>/<neoforge>/ 目录下）
+            client_jar=$(find ./build/$mc -type f -name 'neoforge-*-client.jar' | head -n1)
+            version_json=$(find ./build/$mc -type f -name 'version.json' | head -n1)
 
             if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
               tag="neoforge-mc-$mc"
