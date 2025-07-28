@@ -38,7 +38,7 @@ jobs:
 
             build_dir="./build/$forge_version"
             if [ -d "$build_dir" ] && [ "$(ls -A $build_dir)" ]; then
-              tag="neoforge-mc-$mc-forge-$forge_version"
+              tag="$forge_version"
               gh release create "$tag" -t "$forge_version" -n "Auto build for MC $mc, NeoForge $forge_version" || true
               echo "Uploading files in $build_dir:"
               ls -l "$build_dir"
