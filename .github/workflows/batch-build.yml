@@ -40,11 +40,14 @@ jobs:
             client_jar=$(find "$build_dir" -type f -name 'neoforge-*-client.jar' | head -n1)
             version_json="$build_dir/version.json"
 
-            if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
+            if [ -f "$client_jar" ]; then
               tag="neoforge-mc-$mc-forge-$forge_version"
+              echo $GITHUB_TOKEN | gh auth login --with-token
               gh release create "$tag" -t "$forge_version" -n "Auto build for MC $mc, NeoForge $forge_version" || true
+              echo "Uploading files in $build_dir:"
+              ls -l "$build_dir"
               gh release upload "$tag" "$build_dir"/* --clobber
-              echo "Uploaded $client_jar and $version_json to release $tag"
+              echo "Uploaded all files in $build_dir to release $tag"
             else
               echo "Build for $mc failed or missing artifacts"
             fi
