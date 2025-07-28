@@ -41,9 +41,9 @@ jobs:
             version_json="$build_dir/version.json"
 
             if [ -f "$client_jar" ] && [ -f "$version_json" ]; then
-              tag="$forge_version"
+              tag="neoforge-mc-$mc-forge-$forge_version"
               gh release create "$tag" -t "$forge_version" -n "Auto build for MC $mc, NeoForge $forge_version" || true
-              gh release upload "$tag" "$client_jar" "$version_json" --clobber
+              gh release upload "$tag" "$build_dir"/* --clobber
               echo "Uploaded $client_jar and $version_json to release $tag"
             else
               echo "Build for $mc failed or missing artifacts"
