@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	// "sort"
 	"strings"
+	"regexp"
 )
 
 const metaURL = "https://bmclapi2.bangbang93.com/neoforge/list/1.21.7"
@@ -293,8 +294,118 @@ func BuildNeoForgeClient(nf NeoForgeVersion) (string, error) {
 		fmt.Println("patch version.json: 已追加所有 universal library 并更新 version.json")
 	}()
 
-	// 清理 build 目录
-	// os.RemoveAll(buildDir)
+	// 记录自动复制的文件名
+	copiedFiles := []string{}
+
+	// 自动提取 install_profile.json data 字段中 client 的文件到 build/<version>/ 目录
+	func() {
+		ipPath := filepath.Join(destDir, "install_profile.json")
+		ipBytes, err := os.ReadFile(ipPath)
+		if err != nil {
+			fmt.Printf("extra file: 读取 install_profile.json 失败: %v\n", err)
+			return
+		}
+		var ip map[string]interface{}
+		if err := json.Unmarshal(ipBytes, &ip); err != nil {
+			fmt.Printf("extra file: 解析 install_profile.json 失败: %v\n", err)
+			return
+		}
+		data, ok := ip["data"].(map[string]interface{})
+		if !ok {
+			fmt.Printf("extra file: data 字段不存在或格式错误\n")
+			return
+		}
+		re := regexp.MustCompile(`^\[([^\]]+)\]$`)
+		for _, v := range data {
+			obj, ok := v.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			clientVal, ok := obj["client"].(string)
+			if !ok {
+				continue
+			}
+			m := re.FindStringSubmatch(clientVal)
+			if len(m) != 2 {
+				continue
+			}
+			val := m[1] // 去掉[]
+			parts := strings.Split(val, ":")
+			if len(parts) < 4 {
+				continue
+			}
+			group, artifact, version, classifier := parts[0], parts[1], parts[2], parts[3]
+			ext := "jar"
+			if strings.Contains(classifier, "@") {
+				c := strings.SplitN(classifier, "@", 2)
+				classifier = c[0]
+				ext = c[1]
+			}
+			basePath := filepath.Join(strings.ReplaceAll(group, ".", "/"), artifact, version)
+			fileName := fmt.Sprintf("%s-%s-%s.%s", artifact, version, classifier, ext)
+			targetPath := filepath.Join(basePath, fileName)
+			var foundPath string
+			filepath.Walk("build", func(path string, info os.FileInfo, err error) error {
+				if err == nil && !info.IsDir() && strings.HasSuffix(path, targetPath) {
+					foundPath = path
+					return io.EOF // 终止 walk
+				}
+				return nil
+			})
+			if foundPath == "" {
+				fmt.Printf("extra file: 未找到 %s\n", targetPath)
+				continue
+			}
+			dst := filepath.Join(destDir, filepath.Base(foundPath))
+			srcFile, err := os.Open(foundPath)
+			if err != nil {
+				fmt.Printf("extra file: 打开源文件失败: %v\n", err)
+				continue
+			}
+			defer srcFile.Close()
+			dstFile, err := os.Create(dst)
+			if err != nil {
+				fmt.Printf("extra file: 创建目标文件失败: %v\n", err)
+				continue
+			}
+			defer dstFile.Close()
+			_, err = io.Copy(dstFile, srcFile)
+			if err != nil {
+				fmt.Printf("extra file: 复制文件失败: %v\n", err)
+				continue
+			}
+			fmt.Printf("extra file: 已复制 %s 到 %s\n", foundPath, dst)
+			copiedFiles = append(copiedFiles, filepath.Base(foundPath))
+		}
+	}()
+
+	// 清理 build/<version> 目录，只保留 client jar 和自动复制的文件
+	func() {
+		clientJarName := fmt.Sprintf("neoforge-%s-client.jar", nf.Version)
+		keepFiles := map[string]bool{clientJarName: true}
+		for _, name := range copiedFiles {
+			keepFiles[name] = true
+		}
+		destDir := filepath.Join("build", nf.Version)
+		entries, err := os.ReadDir(destDir)
+		if err != nil {
+			fmt.Printf("clean: 读取目录失败: %v\n", err)
+			return
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			fullPath := filepath.Join(destDir, name)
+			if keepFiles[name] {
+				continue
+			}
+			err := os.RemoveAll(fullPath)
+			if err != nil {
+				fmt.Printf("clean: 删除 %s 失败: %v\n", fullPath, err)
+			} else {
+				fmt.Printf("clean: 已删除 %s\n", fullPath)
+			}
+		}
+	}()
 
 	return destPath, nil
 }
