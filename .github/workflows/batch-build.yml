@@ -37,10 +37,7 @@ jobs:
             fi
 
             build_dir="./build/$forge_version"
-            client_jar=$(find "$build_dir" -type f -name 'neoforge-*-client.jar' | head -n1)
-            version_json="$build_dir/version.json"
-
-            if [ -f "$client_jar" ]; then
+            if [ -d "$build_dir" ] && [ "$(ls -A $build_dir)" ]; then
               tag="neoforge-mc-$mc-forge-$forge_version"
               echo $GITHUB_TOKEN | gh auth login --with-token
               gh release create "$tag" -t "$forge_version" -n "Auto build for MC $mc, NeoForge $forge_version" || true
