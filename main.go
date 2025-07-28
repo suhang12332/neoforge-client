@@ -454,46 +454,59 @@ func main() {
 		}
 		fmt.Printf("Latest MC release: %s\n", latestMC)
 
-		// 2. 获取该 MC 版本下所有 NeoForge 版本
-		metaURL := fmt.Sprintf("https://bmclapi2.bangbang93.com/neoforge/list/%s", latestMC)
-		resp, err := http.Get(metaURL)
+		// 2. 获取 Modrinth manifest
+		resp, err := http.Get("https://launcher-meta.modrinth.com/neo/v0/manifest.json")
 		if err != nil {
-			fmt.Printf("Error fetching NeoForge metadata: %v\n", err)
+			fmt.Printf("Error fetching Modrinth manifest: %v\n", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("Error fetching NeoForge metadata: status %d\n", resp.StatusCode)
-			os.Exit(1)
+		var manifest struct {
+			GameVersions []struct {
+				ID      string `json:"id"`
+				Loaders []struct {
+					ID  string `json:"id"`
+					URL string `json:"url"`
+				} `json:"loaders"`
+			} `json:"gameVersions"`
 		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Printf("Error reading NeoForge metadata: %v\n", err)
+		if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+			fmt.Printf("Error parsing Modrinth manifest: %v\n", err)
 			os.Exit(1)
 		}
 
-		var versions []NeoForgeVersion
-		if err := json.Unmarshal(body, &versions); err != nil {
-			fmt.Printf("Error parsing NeoForge metadata: %v\n", err)
+		// 3. 匹配 latestMC，取 loaders[0].id 作为 forgeVersion
+		var forgeVersion string
+		for _, gv := range manifest.GameVersions {
+			if gv.ID == latestMC && len(gv.Loaders) > 0 {
+				forgeVersion = gv.Loaders[0].ID
+				break
+			}
+		}
+		if forgeVersion == "" {
+			fmt.Printf("未找到 MC %s 对应的 NeoForge 版本\n", latestMC)
 			os.Exit(1)
 		}
-		if len(versions) == 0 {
-			fmt.Println("未找到任何 NeoForge 版本")
-			os.Exit(1)
-		}
-		latestVersion := versions[len(versions)-1]
-		latestVersion.InstallerPath = strings.Replace(latestVersion.InstallerPath, "/maven", "", 1)
+		fmt.Printf("Latest NeoForge version for MC %s: %s\n", latestMC, forgeVersion)
 
-		fmt.Printf("\n==== 构建 %s / %s ====\n", latestVersion.McVersion, latestVersion.Version)
-		jarPath, err := BuildNeoForgeClient(latestVersion)
+		// 4. 构造 NeoForgeVersion 结构体
+		installerPath := fmt.Sprintf("/net/neoforged/neoforge/%s/neoforge-%s-installer.jar", forgeVersion, forgeVersion)
+		version := NeoForgeVersion{
+			Version:       forgeVersion,
+			InstallerPath: installerPath,
+			McVersion:     latestMC,
+			RawVersion:    "neoforge-" + forgeVersion,
+		}
+		fmt.Printf("\n==== 构建 %s / %s ====\n", version.McVersion, version.Version)
+		jarPath, err := BuildNeoForgeClient(version)
 		if err != nil {
 			fmt.Printf("构建失败: %v\n", err)
 			os.Exit(1)
 		}
 		f, _ := os.Create("artifacts.txt")
-		fmt.Fprintf(f, "%s %s %s\n", jarPath, latestVersion.McVersion, latestVersion.Version)
+		fmt.Fprintf(f, "%s %s %s\n", jarPath, version.McVersion, version.Version)
 		f.Close()
-		fmt.Printf("构建完成: %s %s\n", latestVersion.McVersion, latestVersion.Version)
+		fmt.Printf("构建完成: %s %s\n", version.McVersion, version.Version)
 		return
 	}
 
