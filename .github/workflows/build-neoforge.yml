@@ -1,0 +1,54 @@
+name: Build NeoForge Latest
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *' # 每天凌晨2点自动构建
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build NeoForge Latest
+        run: go run main.go --latest
+
+      - name: Find client.jar and version.json
+        id: find_artifacts
+        run: |
+          # 假设 client.jar 在 build/<version>/neoforge-*-client.jar
+          client_jar=$(find . -type f -name 'neoforge-*-client.jar' | head -n1)
+          version_json=$(find . -type f -name 'version.json' | head -n1)
+          build_dir=$(dirname "$client_jar")
+          echo "client_jar=$client_jar" >> $GITHUB_OUTPUT
+          echo "version_json=$version_json" >> $GITHUB_OUTPUT
+          echo "build_dir=$build_dir" >> $GITHUB_OUTPUT
+
+      - name: Parse version from client jar
+        id: parse_version
+        shell: bash
+        run: |
+          client_jar="${{ steps.find_artifacts.outputs.client_jar }}"
+          version=$(basename "$client_jar" | sed -E 's/^neoforge-([0-9.]+)-client\.jar$/\1/')
+          echo "Parsed version: $version"
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "Error: version is null or empty!"
+            exit 1
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.parse_version.outputs.version }}
+          files: ${{ steps.find_artifacts.outputs.build_dir }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
