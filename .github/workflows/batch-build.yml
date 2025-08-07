@@ -1,0 +1,86 @@
+name: Batch Build NeoForge (All Versions from Modrinth)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  batch-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Batch build and upload (all versions from Modrinth)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          
+          # 下载 Modrinth manifest
+          echo "Fetching Modrinth manifest..."
+          manifest_url="https://launcher-meta.modrinth.com/neo/v0/manifest.json"
+          curl -s "$manifest_url" > manifest.json
+          
+          # 使用 jq 解析 manifest 并遍历所有版本
+          echo "Starting batch build for all MC versions and NeoForge versions..."
+          
+          # 遍历每个游戏版本
+          jq -r '[.gameVersions[] | select(.id >= "1.20.2") | {id, loaders}] | sort_by(.id) | reverse[] | "\(.id) \(.loaders | length)"' manifest.json | while read mc_version loader_count; do
+            echo "==== Processing MC version: $mc_version (has $loader_count loaders) ===="
+            
+            # 获取该MC版本的所有NeoForge版本
+            jq -r --arg mc "$mc_version" '.gameVersions[] | select(.id == $mc) | .loaders[].id' manifest.json | while read neoforge_version; do
+              echo "---- Building NeoForge $neoforge_version for MC $mc_version ----"
+              
+              build_log=$(mktemp)
+              if go run main.go --mc "$mc_version" --neoforge "$neoforge_version" 2>&1 | tee "$build_log"; then
+                # 构建成功，查找构建的文件
+                build_dir="./build/$neoforge_version"
+                if [ -d "$build_dir" ] && [ "$(ls -A $build_dir)" ]; then
+                  tag="$neoforge_version"
+                  
+                  # 创建 release
+                  if gh release create "$tag" -t "$neoforge_version" -n "Auto build for MC $mc_version, NeoForge $neoforge_version"; then
+                    echo "Created release: $tag"
+                    
+                    # 上传文件
+                    echo "Uploading files in $build_dir:"
+                    ls -l "$build_dir"
+                    if gh release upload "$tag" "$build_dir"/* --clobber; then
+                      echo "Successfully uploaded all files in $build_dir to release $tag"
+                    else
+                      echo "Failed to upload files for $tag"
+                    fi
+                  else
+                    echo "Failed to create release: $tag"
+                  fi
+                else
+                  echo "Build directory $build_dir is empty or missing for $mc_version/$neoforge_version"
+                fi
+              else
+                echo "Build failed for MC $mc_version with NeoForge $neoforge_version"
+              fi
+              
+              rm -f "$build_log"
+              
+              # 添加延迟避免 API 限制
+              sleep 2
+            done
+            
+            # 在MC版本之间添加更长的延迟
+            sleep 5
+          done
+          
+          echo "Batch build completed!"
