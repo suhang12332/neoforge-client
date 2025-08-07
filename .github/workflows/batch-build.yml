@@ -60,6 +60,8 @@ jobs:
                     ls -l "$build_dir"
                     if gh release upload "$tag" "$build_dir"/* --clobber; then
                       echo "Successfully uploaded all files in $build_dir to release $tag"
+                      # 上传成功后删除 build 目录下的 neoforge_version 文件夹
+                      rm -rf "$build_dir"
                     else
                       echo "Failed to upload files for $tag"
                     fi
