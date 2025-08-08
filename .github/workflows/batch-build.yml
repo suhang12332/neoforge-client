@@ -45,7 +45,18 @@ jobs:
               echo "---- Building NeoForge $neoforge_version for MC $mc_version ----"
               
               build_log=$(mktemp)
+              build_success=false
               if go run main.go --mc "$mc_version" --neoforge "$neoforge_version" 2>&1 | tee "$build_log"; then
+                build_success=true
+              else
+                # 检查是否包含成功安装的消息
+                if grep -q "Successfully installed client into launcher" "$build_log"; then
+                  echo "Build succeeded based on 'Successfully installed client into launcher' message"
+                  build_success=true
+                fi
+              fi
+              
+              if [ "$build_success" = true ]; then
                 # 构建成功，查找构建的文件
                 build_dir="./build/$neoforge_version"
                 if [ -d "$build_dir" ] && [ "$(ls -A $build_dir)" ]; then
