@@ -37,7 +37,7 @@ jobs:
           echo "Starting batch build for all MC versions and NeoForge versions..."
           
           # 遍历每个游戏版本
-          jq -r '[.gameVersions[] | select(.id >= "1.20.2" and .id <= "1.20.4") | {id, loaders}] | sort_by(.id) | reverse[] | "\(.id) \(.loaders | length)"' manifest.json | while read mc_version loader_count; do
+          jq -r '[.gameVersions[] | select(.id >= "1.20.2" and .id <= "1.20.2") | {id, loaders}] | sort_by(.id) | reverse[] | "\(.id) \(.loaders | length)"' manifest.json | while read mc_version loader_count; do
             echo "==== Processing MC version: $mc_version (has $loader_count loaders) ===="
             
             # 获取该MC版本的所有NeoForge版本
